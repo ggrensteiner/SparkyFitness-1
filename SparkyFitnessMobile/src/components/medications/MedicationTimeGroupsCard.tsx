@@ -5,17 +5,16 @@ import { useCSSVariable } from 'uniwind';
 import type { useLogDose } from '../../hooks/useMedications';
 import { usePreferences } from '../../hooks/usePreferences';
 import { formatLocalizedTimeOfDay } from '../../utils/medicationScheduleLocalization';
-import { doseSlotStatus, type DueDose } from '../../utils/medications';
+import {
+  groupDosesByTime,
+  type DueDose,
+  type TimeGroup,
+} from '../../utils/medications';
 
 interface MedicationTimeGroupsCardProps {
   /** Scheduled dose slots for the selected day (already subtype-filtered). */
   dueDoses: DueDose[];
   dose: ReturnType<typeof useLogDose>;
-}
-
-interface TimeGroup {
-  time: string;
-  pending: DueDose[];
 }
 
 /**
@@ -35,25 +34,14 @@ const MedicationTimeGroupsCard: React.FC<MedicationTimeGroupsCardProps> = ({
   ];
   const [busyTime, setBusyTime] = useState<string | null>(null);
 
-  const groups = useMemo<TimeGroup[]>(() => {
-    const byTime = new Map<string, DueDose[]>();
-    for (const due of dueDoses) {
-      const time = due.schedule.time_of_day;
-      if (time == null || time === '') continue;
-      const list = byTime.get(time) ?? [];
-      list.push(due);
-      byTime.set(time, list);
-    }
-    return [...byTime.entries()]
-      .map(([time, dues]) => ({
-        time,
-        pending: dues.filter(
-          (d) => doseSlotStatus(dose.entryForDue(d)) === 'pending'
-        ),
-      }))
-      .filter((group) => group.pending.length >= 2)
-      .sort((a, b) => a.time.localeCompare(b.time));
-  }, [dueDoses, dose]);
+  const groups = useMemo(
+    () =>
+      groupDosesByTime(dueDoses, dose.entryForDue).filter(
+        (g): g is TimeGroup & { time: string } =>
+          g.time != null && g.pending.length >= 2
+      ),
+    [dueDoses, dose]
+  );
 
   const markAll = useCallback(
     async (group: TimeGroup) => {

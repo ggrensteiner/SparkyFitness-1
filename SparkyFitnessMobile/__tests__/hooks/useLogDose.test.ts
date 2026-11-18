@@ -269,13 +269,11 @@ describe('useLogDose', () => {
       }),
     ];
 
-    let batch: Promise<number>;
-    act(() => {
-      batch = result.current.logDosesBatch(dues, 'taken');
+    let batchCount = 0;
+    await act(async () => {
+      batchCount = await result.current.logDosesBatch(dues, 'taken');
     });
-    await waitFor(() => {
-      expect(batch).resolves.toBe(2);
-    });
+    expect(batchCount).toBe(2);
     expect(mockCreateEntry).toHaveBeenCalledTimes(2);
     expect(mockCreateEntry).toHaveBeenNthCalledWith(1, {
       medication_id: 'med-1',
@@ -321,13 +319,13 @@ describe('useLogDose', () => {
       }),
     ];
 
-    act(() => {
-      void result.current.logDosesBatch(dues, 'taken');
+    let batchCount = 0;
+    await act(async () => {
+      batchCount = await result.current.logDosesBatch(dues, 'taken');
     });
 
-    await waitFor(() => {
-      expect(mockCreateEntry).not.toHaveBeenCalled();
-    });
+    expect(batchCount).toBe(0);
+    expect(mockCreateEntry).not.toHaveBeenCalled();
     expect(mockUpdateEntry).not.toHaveBeenCalled();
     expect(mockDeleteEntry).not.toHaveBeenCalled();
     expect(Toast.show).not.toHaveBeenCalled();
@@ -356,13 +354,13 @@ describe('useLogDose', () => {
       }),
     ];
 
-    act(() => {
-      void result.current.logDosesBatch(dues, 'taken');
+    let batchCount = 0;
+    await act(async () => {
+      batchCount = await result.current.logDosesBatch(dues, 'taken');
     });
 
-    await waitFor(() => {
-      expect(mockUpdateEntry).toHaveBeenCalledTimes(2);
-    });
+    expect(batchCount).toBe(2);
+    expect(mockUpdateEntry).toHaveBeenCalledTimes(2);
     expect(mockUpdateEntry).toHaveBeenCalledWith('entry-1', {
       schedule_id: 'sched-1',
       status: 'taken',
@@ -371,6 +369,51 @@ describe('useLogDose', () => {
     expect(mockUpdateEntry).toHaveBeenCalledWith('entry-2', {
       schedule_id: 'sched-2',
       status: 'taken',
+      taken_at: expect.any(String),
+    });
+    expect(Toast.show).toHaveBeenCalledWith({
+      type: 'success',
+      text1: 'Marked 2 doses as taken',
+    });
+  });
+
+  test('logDosesBatch claims a schedule-less entry for one slot and creates a new entry for the rest', async () => {
+    // One schedule-less entry matches every schedule of its medication. Two
+    // pending slots of the same medication must not both PUT that one entry id:
+    // the first slot claims it (update) and the second creates a fresh entry.
+    const entries = [buildEntry({ schedule_id: null, status: 'snoozed' })];
+    const { result } = renderLogDose(entries);
+    const dues = [
+      buildDue(),
+      buildDue({
+        schedule: {
+          id: 'sched-2',
+          schedule_type_id: 'daily',
+          time_of_day: '20:00',
+        },
+      }),
+    ];
+
+    let batchCount = 0;
+    await act(async () => {
+      batchCount = await result.current.logDosesBatch(dues, 'taken');
+    });
+
+    expect(batchCount).toBe(2);
+    // Exactly one update: the single schedule-less entry is claimed once, never
+    // written twice with two different schedule attributions.
+    expect(mockUpdateEntry).toHaveBeenCalledTimes(1);
+    expect(mockUpdateEntry).toHaveBeenCalledWith('entry-1', {
+      schedule_id: 'sched-1',
+      status: 'taken',
+      taken_at: expect.any(String),
+    });
+    expect(mockCreateEntry).toHaveBeenCalledTimes(1);
+    expect(mockCreateEntry).toHaveBeenCalledWith({
+      medication_id: 'med-1',
+      schedule_id: 'sched-2',
+      status: 'taken',
+      entry_date: SELECTED_DATE,
       taken_at: expect.any(String),
     });
     expect(Toast.show).toHaveBeenCalledWith({

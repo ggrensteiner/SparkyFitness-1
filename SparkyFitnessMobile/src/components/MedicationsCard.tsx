@@ -21,7 +21,11 @@ import type { RootStackParamList, TabParamList } from '../types/navigation';
 import { formatLocalizedTimeOfDay } from '../utils/medicationScheduleLocalization';
 
 import { medicationDoseSubtitle } from '../utils/medicationLocalization';
-import { doseSlotStatus, type DueDose } from '../utils/medications';
+import {
+  doseSlotStatus,
+  groupDosesByTime,
+  type TimeGroup,
+} from '../utils/medications';
 import { selectPrnMedications } from '../utils/medicationAdherence';
 
 type MedicationsCardNavigation = CompositeNavigationProp<
@@ -31,13 +35,6 @@ type MedicationsCardNavigation = CompositeNavigationProp<
 
 interface MedicationsCardProps {
   navigation: MedicationsCardNavigation;
-}
-
-interface TimeGroup {
-  /** Schedule time of day (HH:MM:SS), or null for time-less schedules. */
-  time: string | null;
-  dues: DueDose[];
-  pending: DueDose[];
 }
 
 const MedicationsCard: React.FC<MedicationsCardProps> = ({ navigation }) => {
@@ -62,32 +59,10 @@ const MedicationsCard: React.FC<MedicationsCardProps> = ({ navigation }) => {
 
   const groups = useMemo<TimeGroup[]>(() => {
     if (!medications) return [];
-    const dues = getDueDosesForDate(
-      medications,
-      selectedDate,
-      getDeviceTimezone()
+    return groupDosesByTime(
+      getDueDosesForDate(medications, selectedDate, getDeviceTimezone()),
+      entryForDue
     );
-    const byTime = new Map<string | null, DueDose[]>();
-    for (const due of dues) {
-      const time = due.schedule.time_of_day ?? '';
-      const key = time === '' ? null : time;
-      const list = byTime.get(key) ?? [];
-      list.push(due);
-      byTime.set(key, list);
-    }
-    return [...byTime.entries()]
-      .map(([time, dues]) => ({
-        time,
-        dues,
-        pending: dues.filter(
-          (d) => doseSlotStatus(entryForDue(d)) === 'pending'
-        ),
-      }))
-      .sort((a, b) => {
-        if (a.time == null) return 1;
-        if (b.time == null) return -1;
-        return a.time.localeCompare(b.time);
-      });
   }, [medications, selectedDate, entryForDue]);
 
   const prnMeds = useMemo(

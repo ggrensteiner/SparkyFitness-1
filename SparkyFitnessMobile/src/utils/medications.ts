@@ -58,3 +58,44 @@ export function isDoseLogged(
       (e.status === 'taken' || e.status === 'skipped')
   );
 }
+
+/** A set of dose slots that share a schedule time of day. */
+export interface TimeGroup {
+  /** Schedule time of day (HH:MM:SS), or null for time-less schedules. */
+  time: string | null;
+  dues: DueDose[];
+  pending: DueDose[];
+}
+
+/**
+ * Group dose slots by their schedule time of day and compute the pending
+ * subset for each group, sorted chronologically with time-less slots last.
+ * Shared by the dashboard card and the "take at once" card so the grouping
+ * and pending-count logic live in exactly one place.
+ */
+export function groupDosesByTime(
+  dues: DueDose[],
+  entryForDue: (due: DueDose) => MedicationEntry | undefined
+): TimeGroup[] {
+  const byTime = new Map<string | null, DueDose[]>();
+  for (const due of dues) {
+    const time = due.schedule.time_of_day ?? '';
+    const key = time === '' ? null : time;
+    const list = byTime.get(key) ?? [];
+    list.push(due);
+    byTime.set(key, list);
+  }
+  return [...byTime.entries()]
+    .map(([time, duesInGroup]) => ({
+      time,
+      dues: duesInGroup,
+      pending: duesInGroup.filter(
+        (d) => doseSlotStatus(entryForDue(d)) === 'pending'
+      ),
+    }))
+    .sort((a, b) => {
+      if (a.time == null) return 1;
+      if (b.time == null) return -1;
+      return a.time.localeCompare(b.time);
+    });
+}

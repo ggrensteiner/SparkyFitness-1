@@ -385,9 +385,23 @@ export function useLogDose(
     async (dues: DueDose[], status: 'taken' | 'skipped'): Promise<number> => {
       if (dues.length === 0) return 0;
       const now = new Date().toISOString();
+      // Assign each slot to an entry serially first, so one entry can be claimed
+      // by at most one slot. A schedule-less entry matches every schedule of its
+      // medication, so otherwise two concurrent slots could PUT the same entry id
+      // with different schedule attribution; a slot with no unclaimed match then
+      // creates a new entry instead.
+      const claimed = new Set<string>();
+      const assignments = dues.map((due) => {
+        const existing = entries?.find(
+          (e) =>
+            !claimed.has(e.id) &&
+            entryMatchesDose(e, due.medication.id, due.schedule.id)
+        );
+        if (existing) claimed.add(existing.id);
+        return { due, existing };
+      });
       const results = await Promise.allSettled(
-        dues.map(async (due) => {
-          const existing = entryForDue(due);
+        assignments.map(async ({ due, existing }) => {
           if (
             existing &&
             (existing.status === 'taken' ||
@@ -460,7 +474,7 @@ export function useLogDose(
       }
       return changed;
     },
-    [entryForDue, createEntryMutation, updateEntryMutation, selectedDate, t]
+    [entries, createEntryMutation, updateEntryMutation, selectedDate, t]
   );
 
   // Unlike scheduled slots, a PRN log has no toggle surface to undo a
